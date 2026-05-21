@@ -31,7 +31,7 @@ from vars import AUTH_USERS
 
 MAX_VIDEOS    = 45
 TIMEOUT       = 300   # 5 min idle wait
-BURST_DRAIN   = 0.3   # short window to drain simultaneous messages (300ms)
+BURST_DRAIN   = 1.0   # short window to drain simultaneous messages (300ms)
 MAX_DL_CONCUR = 4     # max concurrent downloads at once
 
 # .....,.....,.......,...,.......,....., .....,.....,.......,...,.......,.....,
