@@ -11,8 +11,8 @@ Works **ONLY in group chats**. Bot must be **Admin** with full rights.
 | Command | Where | Description |
 |---|---|---|
 | `/start` | Group / PM | Welcome message with feature list & buttons |
-| `/changecaption` | Group only | Re-caption up to **45 videos** in sequence |
-| `/changepcaption` | Group only | Re-caption up to **45 PDFs** in sequence |
+| `/changecaption` | Group only | Re-caption up to **5000 videos** in sequence |
+| `/changepcaption` | Group only | Re-caption up to **5000 PDFs** in sequence |
 | `/setbatch` | Group only | Set global **Batch Name** for captions |
 | `/setcredit` | Group only | Set global **Credit Name** for captions |
 | `/viewsettings` | Group only | View current global settings |
