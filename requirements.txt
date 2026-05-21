@@ -1,0 +1,17 @@
+setuptools>=65.0.0
+wheel
+pyrogram
+pyrofork
+pyromod==1.5
+TgCrypto==1.2.5
+pycryptodome==3.18.0
+requests==2.31.0
+aiohttp
+aiofiles
+python-dotenv==1.0.0
+Flask==2.3.3
+gunicorn==21.2.0
+Jinja2==3.1.2
+Werkzeug==2.3.7
+itsdangerous==2.1.2
+pillow

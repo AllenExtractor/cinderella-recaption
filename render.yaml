@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: cinderella-recaption
+    plan: free
+    env: docker
+    dockerfilePath: Dockerfile
+    branch: main
+    autoDeploy: false
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: API_ID
+        sync: false
+      - key: API_HASH
+        sync: false
+      - key: OWNER
+        sync: false
+      - key: CREDIT
+        sync: false
+      - key: AUTH_USERS
+        sync: false
+      - key: TOTAL_USERS
+        sync: false
+      - key: PORT
+        value: "8000"
