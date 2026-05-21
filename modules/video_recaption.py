@@ -86,7 +86,7 @@ def register_video_recaption_handlers(bot: Client):
         )
 
         # collected: list of dicts
-        # { file_id, file_ref, title, ext, is_doc, duration_str }
+        # { file_id, title, ext, is_doc, duration_str }
         collected: list = []
         count = 0
 
@@ -157,12 +157,10 @@ def register_video_recaption_handlers(bot: Client):
 
                     if iv:
                         file_id  = msg.video.file_id
-                        file_ref = msg.video.file_reference
                         fname    = msg.video.file_name or "video.mp4"
                         duration = msg.video.duration or 0
                     else:
                         file_id  = msg.document.file_id
-                        file_ref = msg.document.file_reference
                         fname    = msg.document.file_name or "video.mp4"
                         duration = getattr(msg.document, "duration", 0) or 0
 
@@ -183,7 +181,6 @@ def register_video_recaption_handlers(bot: Client):
 
                     collected.append({
                         "file_id":      file_id,
-                        "file_ref":     file_ref,
                         "title":        title,
                         "ext":          ext,
                         "is_doc":       not iv,

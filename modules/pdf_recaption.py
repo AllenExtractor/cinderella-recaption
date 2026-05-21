@@ -71,7 +71,7 @@ def register_pdf_recaption_handlers(bot: Client):
             "• Send /cancel to abort.</blockquote>"
         )
 
-        # collected: list of dicts { file_id, file_ref, title }
+        # collected: list of dicts { file_id, title }
         collected: list = []
         count = 0
 
@@ -139,7 +139,6 @@ def register_pdf_recaption_handlers(bot: Client):
                         break
 
                     file_id  = msg.document.file_id
-                    file_ref = msg.document.file_reference
                     fname    = msg.document.file_name or "document.pdf"
                     title    = get_title_from_file_or_caption(fname, msg.caption or "")
 
@@ -151,7 +150,6 @@ def register_pdf_recaption_handlers(bot: Client):
 
                     collected.append({
                         "file_id":  file_id,
-                        "file_ref": file_ref,
                         "title":    title,
                     })
                     count += 1
