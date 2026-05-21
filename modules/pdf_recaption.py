@@ -31,7 +31,7 @@ from vars import AUTH_USERS
 
 MAX_PDFS      = 45
 TIMEOUT       = 300   # 5 min idle wait
-BURST_DRAIN   = 0.3   # 300ms window to drain simultaneous messages
+BURST_DRAIN   = 1.0   # 300ms window to drain simultaneous messages
 MAX_DL_CONCUR = 4     # max concurrent downloads
 
 # .....,.....,.......,...,.......,....., .....,.....,.......,...,.......,.....,
