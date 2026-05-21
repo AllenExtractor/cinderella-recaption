@@ -70,7 +70,7 @@ def get_start_keyboard():
         [InlineKeyboardButton("📊 View Settings",         switch_inline_query_current_chat="/viewsettings")],
         [InlineKeyboardButton("📢 Help & Info",           callback_data="help_info")],
         [InlineKeyboardButton("🔍 Developer", url="https://t.me/CinderellaContactBot"),
-         InlineKeyboardButton("👑 Owner",     url=f"tg://openmessage?user_id={OWNER}")],
+         InlineKeyboardButton("👑 Owner",     url="https://t.me/MR_Toxic_1")],
     ])
 
 # .....,.....,.......,...,.......,....., .....,.....,.......,...,.......,.....,
@@ -94,10 +94,10 @@ async def start_cmd(client: Client, m: Message):
     if is_auth:
         caption = (
             f"**Hello Dear 👑 {first}!**\n\n"
-            f"➠ I am **Cinderella PVC Bot** (PDF Video Caption Bot)\n\n"
+            f"➠ I am **Cinderella PVC Bot** (PDF-Video-Caption Bot)\n\n"
             f"**✨ What I can do:**\n"
-            f"• 🎥 `/changecaption` — Re-caption up to **45 videos** at once\n"
-            f"• 📄 `/changepcaption` — Re-caption up to **45 PDFs** at once\n"
+            f"• 🎥 `/changecaption` — Re-caption up to **5000 videos** at once\n"
+            f"• 📄 `/changepcaption` — Re-caption up to **5000 PDFs** at once\n"
             f"• ⚙️ `/setbatch` — Set global **Batch Name**\n"
             f"• 💳 `/setcredit` — Set global **Credit Name**\n"
             f"• 📊 `/viewsettings` — View current settings\n\n"
@@ -134,8 +134,8 @@ async def help_info_cb(client, callback_query):
     text = (
         "**📖 Cinderella PVC Bot — Help**\n\n"
         "**Group Commands (Auth Users):**\n"
-        "• `/changecaption` — Bulk recaption videos (max 45)\n"
-        "• `/changepcaption` — Bulk recaption PDFs (max 45)\n"
+        "• `/changecaption` — Bulk recaption videos (max 5000)\n"
+        "• `/changepcaption` — Bulk recaption PDFs (max 5000)\n"
         "• `/setbatch` — Set global batch name\n"
         "• `/setcredit` — Set global credit name\n"
         "• `/viewsettings` — View current settings\n\n"
