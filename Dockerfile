@@ -20,4 +20,4 @@ COPY . .
 RUN pip install --upgrade pip setuptools wheel \
     && pip install --no-cache-dir -r requirements.txt
 
-CMD ["sh", "-c", "cd modules && gunicorn --bind 0.0.0.0:${PORT:-8000} main:flask_app --workers 1 & python3 main.py"]
+CMD ["sh", "-c", "pwd && ls && ls modules && gunicorn --chdir modules --bind 0.0.0.0:${PORT:-8000} main:flask_app --workers 1 & python3 modules/main.py"]
