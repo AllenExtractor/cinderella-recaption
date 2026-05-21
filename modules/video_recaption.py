@@ -4,16 +4,15 @@ video_recaption.py — /changecaption command
 Flow:
   1. User sends /changecaption in group
   2. Bot says: send up to 45 videos now
-  3. User sends videos (one by one OR multiple at once — all accepted)
+  3. User sends videos — one by one OR multiple at once (all accepted)
      Bot downloads each to disk, deletes from chat, counts: X/45
-  4. When user reaches 45 OR sends /Done:
-     Bot re-uploads all videos from disk with new cc1 captions
+  4. User sends /Done → Bot re-uploads all from disk with new cc1 captions
   5. Done message + invite to use again
 
 FIXES:
-  - Multiple simultaneous files: event-based listener with 2s batching window
-  - Empty messages / copy_message fail: files downloaded to disk first,
-    then deleted, then re-uploaded via send_video/send_document from disk
+  - NO passive @bot.on_message handler (was breaking all other commands)
+  - Uses pyromod listen() in a loop — collects bursts via short sleep window
+  - Files downloaded to disk BEFORE delete — so resend never fails
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
@@ -30,26 +29,13 @@ from caption_builder import build_video_caption, get_title_from_file_or_caption
 from vars import AUTH_USERS
 
 MAX_VIDEOS = 45
-TIMEOUT    = 300   # 5 min idle wait for new file / /Done
-BATCH_WAIT = 2.5   # seconds to wait for more files after last received
-
-# ── Per-chat session storage ──────────────────────────────────────────────────
-# { chat_id: { "active": bool, "queue": asyncio.Queue } }
-_video_sessions: dict = {}
+TIMEOUT    = 300    # 5 min wait for next message
+BURST_WAIT = 2.5    # seconds to wait for more files in same burst
 
 # .....,.....,.......,...,.......,....., .....,.....,.......,...,.......,.....,
 
 def register_video_recaption_handlers(bot: Client):
 
-    # ── Passive event handler — feeds queue for any active session ────────────
-    @bot.on_message(filters.group)
-    async def _video_feed(client: Client, m: Message):
-        chat_id = m.chat.id
-        session = _video_sessions.get(chat_id)
-        if session and session.get("active"):
-            await session["queue"].put(m)
-
-    # ── /changecaption command ────────────────────────────────────────────────
     @bot.on_message(filters.command("changecaption") & filters.group)
     async def changecaption_cmd(client: Client, m: Message):
         chat_id = m.chat.id
@@ -72,38 +58,32 @@ def register_video_recaption_handlers(bot: Client):
         except Exception:
             pass
 
-        # Start new session with a queue
-        q: asyncio.Queue = asyncio.Queue()
-        _video_sessions[chat_id] = {"active": True, "queue": q}
         await m.delete()
 
         editable = await client.send_message(
             chat_id,
             "**🎥 Video Caption Change Mode**\n\n"
-            f"Send up to **{MAX_VIDEOS} videos** now — you can send many at once!\n\n"
-            "<blockquote>• I will download each video, delete from chat, and count.\n"
-            f"• After all videos, send **/Done** to re-upload with new captions.\n"
-            f"• Or send **/Done** anytime before {MAX_VIDEOS} to stop early.\n"
+            f"Send up to **{MAX_VIDEOS} videos** now — you can forward many at once!\n\n"
+            "<blockquote>• I will download & delete each video, then count.\n"
+            f"• Send **/Done** anytime to re-upload with new captions.\n"
             "• Send /cancel to abort.</blockquote>"
         )
 
-        # ── collected: list of dicts { path, title, ext, is_doc } ────────────
-        collected: list = []
+        collected: list = []   # { path, title, ext, is_doc }
         count = 0
-        tmp_dir = tempfile.mkdtemp(prefix="cinderella_vid_")
+        tmp_dir = tempfile.mkdtemp(prefix="cinvid_")
 
         try:
             while count < MAX_VIDEOS:
-                # ── Wait for next item (with timeout) ────────────────────────
+                # ── Wait for next message ─────────────────────────────────────
                 try:
-                    incoming: Message = await asyncio.wait_for(q.get(), timeout=TIMEOUT)
+                    incoming: Message = await bot.listen(chat_id, timeout=TIMEOUT)
                 except asyncio.TimeoutError:
                     await editable.edit(
                         f"⏰ **Timeout!** No response for 5 minutes.\n"
                         f"Collected {count} video(s). Session ended.\n"
                         "Use /changecaption to start again."
                     )
-                    _video_sessions.pop(chat_id, None)
                     _cleanup(tmp_dir, collected)
                     return
 
@@ -112,7 +92,6 @@ def register_video_recaption_handlers(bot: Client):
                     try: await incoming.delete()
                     except Exception: pass
                     await editable.edit("❌ **Cancelled.**")
-                    _video_sessions.pop(chat_id, None)
                     _cleanup(tmp_dir, collected)
                     return
 
@@ -121,54 +100,64 @@ def register_video_recaption_handlers(bot: Client):
                     try: await incoming.delete()
                     except Exception: pass
                     if count == 0:
-                        await editable.edit("❌ No videos collected. Use /changecaption to start again.")
-                        _video_sessions.pop(chat_id, None)
+                        await editable.edit(
+                            "❌ No videos collected.\nUse /changecaption to start again."
+                        )
                         _cleanup(tmp_dir, collected)
                         return
-                    break  # proceed to re-upload
+                    break
 
-                # ── Detect video/doc ──────────────────────────────────────────
-                is_video = bool(incoming.video)
-                is_doc   = bool(
-                    incoming.document and incoming.document.mime_type and
-                    incoming.document.mime_type.startswith("video/")
-                )
+                # ── Check if it's a video/video-doc ──────────────────────────
+                if not _is_video(incoming):
+                    continue
 
-                if not (is_video or is_doc):
-                    continue  # ignore non-video messages
+                # ── Burst collection: gather simultaneous uploads ─────────────
+                # Build a small list starting with this message
+                burst = [incoming]
+                await asyncio.sleep(BURST_WAIT)
 
-                # ── Drain queue: collect all files that arrived simultaneously ─
-                # Add this message to a local batch first
-                batch = [incoming]
-                await asyncio.sleep(BATCH_WAIT)   # wait for simultaneous uploads
-                while not q.empty():
-                    extra = q.get_nowait()
-                    # If it's /Done or /cancel, put back and stop draining
+                # Drain any messages that arrived during the sleep
+                # We use a helper coroutine that peeks with a short timeout
+                while count + len(burst) < MAX_VIDEOS:
+                    try:
+                        extra: Message = await bot.listen(chat_id, timeout=1)
+                    except asyncio.TimeoutError:
+                        break  # no more in burst
+                    # If it's /Done or /cancel, put it back via a re-listen trick
+                    # We can't "unget" from pyromod, so handle it now
                     if extra.text and extra.text.strip().lower() in ["/done", "/cancel", "done"]:
-                        await q.put(extra)
+                        # Process the burst we have, then handle this command next loop
+                        # We do this by breaking and storing command for next iteration
+                        burst.append(extra)  # will be caught as non-video, handled below
                         break
-                    ev = bool(extra.video)
-                    ed = bool(
-                        extra.document and extra.document.mime_type and
-                        extra.document.mime_type.startswith("video/")
-                    )
-                    if ev or ed:
-                        batch.append(extra)
+                    burst.append(extra)
 
-                # ── Process each message in batch ─────────────────────────────
-                for msg in batch:
+                # ── Process each message in burst ─────────────────────────────
+                stop_after = False
+                for msg in burst:
                     if count >= MAX_VIDEOS:
                         break
 
-                    iv = bool(msg.video)
-                    id_ = bool(
-                        msg.document and msg.document.mime_type and
-                        msg.document.mime_type.startswith("video/")
-                    )
-
-                    if not (iv or id_):
+                    # If this is a command message (got mixed in from burst drain)
+                    if msg.text:
+                        txt = msg.text.strip().lower()
+                        if txt in ["/done", "done"]:
+                            try: await msg.delete()
+                            except Exception: pass
+                            stop_after = True
+                            break
+                        elif txt == "/cancel":
+                            try: await msg.delete()
+                            except Exception: pass
+                            await editable.edit("❌ **Cancelled.**")
+                            _cleanup(tmp_dir, collected)
+                            return
                         continue
 
+                    if not _is_video(msg):
+                        continue
+
+                    iv   = bool(msg.video)
                     fname        = (msg.video.file_name if iv else msg.document.file_name) or "video.mp4"
                     caption_text = msg.caption or ""
 
@@ -180,16 +169,20 @@ def register_video_recaption_handlers(bot: Client):
 
                     title = get_title_from_file_or_caption(fname, caption_text)
 
-                    # ── Download to disk FIRST ────────────────────────────────
-                    safe_name = f"{count+1:03d}_{fname}"
-                    # Sanitize filename
-                    safe_name = "".join(c if c.isalnum() or c in "._- " else "_" for c in safe_name)
-                    file_path = os.path.join(tmp_dir, safe_name)
+                    # ── Download FIRST ────────────────────────────────────────
+                    safe = "".join(
+                        c if c.isalnum() or c in "._-" else "_"
+                        for c in f"{count+1:03d}_{fname}"
+                    )
+                    fpath = os.path.join(tmp_dir, safe)
 
                     try:
-                        await client.download_media(msg, file_name=file_path)
+                        await client.download_media(msg, file_name=fpath)
                     except Exception as dl_err:
-                        await client.send_message(chat_id, f"⚠️ Download failed for video {count+1}: {str(dl_err)[:200]}")
+                        await client.send_message(
+                            chat_id,
+                            f"⚠️ Download failed for video {count+1}: {str(dl_err)[:150]}"
+                        )
                         try: await msg.delete()
                         except Exception: pass
                         continue
@@ -200,19 +193,14 @@ def register_video_recaption_handlers(bot: Client):
                     except Exception:
                         pass
 
-                    collected.append({
-                        "path":   file_path,
-                        "title":  title,
-                        "ext":    ext,
-                        "is_doc": id_
-                    })
+                    is_doc = not bool(msg.video)
+                    collected.append({"path": fpath, "title": title, "ext": ext, "is_doc": is_doc})
                     count += 1
 
                     if count >= MAX_VIDEOS:
                         await editable.edit(
                             f"✅ **{count}/{MAX_VIDEOS} videos received!**\n\n"
-                            "You've reached the maximum limit.\n"
-                            "Send **/Done** now to re-upload with new captions."
+                            "Max limit reached. Preparing to re-upload..."
                         )
                     else:
                         await editable.edit(
@@ -220,30 +208,20 @@ def register_video_recaption_handlers(bot: Client):
                             "Keep sending or send **/Done** when finished."
                         )
 
-                # ── If reached MAX — wait for /Done then break ─────────────
-                if count >= MAX_VIDEOS:
-                    try:
-                        done_msg: Message = await asyncio.wait_for(q.get(), timeout=TIMEOUT)
-                        try: await done_msg.delete()
-                        except Exception: pass
-                    except asyncio.TimeoutError:
-                        pass
+                if stop_after or count >= MAX_VIDEOS:
                     break
 
         except Exception as e:
-            await editable.edit(f"❌ Error: {str(e)[:300]}")
-            _video_sessions.pop(chat_id, None)
+            await editable.edit(f"❌ Error during collection: {str(e)[:300]}")
             _cleanup(tmp_dir, collected)
             return
-
-        _video_sessions.pop(chat_id, None)
 
         if not collected:
-            await editable.edit("❌ No videos to re-upload.")
+            await editable.edit("❌ No videos collected.")
             _cleanup(tmp_dir, collected)
             return
 
-        # ── Re-upload all videos from disk with new captions ─────────────────
+        # ── Re-upload from disk ───────────────────────────────────────────────
         await editable.edit(
             f"⏳ **Re-uploading {len(collected)} video(s) with new captions...**\n"
             "Please wait."
@@ -251,29 +229,26 @@ def register_video_recaption_handlers(bot: Client):
 
         success = 0
         for idx, item in enumerate(collected, start=1):
-            fpath  = item["path"]
-            title  = item["title"]
-            ext    = item["ext"]
-            is_doc = item["is_doc"]
-            caption = build_video_caption(idx, title, ext)
-
+            caption = build_video_caption(idx, item["title"], item["ext"])
             try:
-                if is_doc:
+                if item["is_doc"]:
                     await client.send_document(
-                        chat_id   = chat_id,
-                        document  = fpath,
-                        caption   = caption
+                        chat_id  = chat_id,
+                        document = item["path"],
+                        caption  = caption
                     )
                 else:
                     await client.send_video(
                         chat_id = chat_id,
-                        video   = fpath,
+                        video   = item["path"],
                         caption = caption
                     )
                 success += 1
                 await asyncio.sleep(0.5)
             except Exception as e:
-                await client.send_message(chat_id, f"⚠️ Failed to send video {idx}: {str(e)[:200]}")
+                await client.send_message(
+                    chat_id, f"⚠️ Failed to send video {idx}: {str(e)[:200]}"
+                )
 
         await editable.edit(
             f"✅ **Done! I shared all {success} video(s) with new Captions.**\n\n"
@@ -282,8 +257,17 @@ def register_video_recaption_handlers(bot: Client):
         _cleanup(tmp_dir, collected)
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _is_video(m: Message) -> bool:
+    if m.video:
+        return True
+    if m.document and m.document.mime_type and m.document.mime_type.startswith("video/"):
+        return True
+    return False
+
+
 def _cleanup(tmp_dir: str, collected: list):
-    """Remove downloaded temp files."""
     for item in collected:
         try:
             if os.path.exists(item["path"]):

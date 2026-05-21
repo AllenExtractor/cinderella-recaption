@@ -216,16 +216,27 @@ def health():
 # .....,.....,.......,...,.......,....., .....,.....,.......,...,.......,.....,
 
 def run_flask():
+    # Only run Flask internally if NOT launched by gunicorn
+    # (Dockerfile CMD runs gunicorn for Flask + python3 main.py for bot separately)
+    # When gunicorn is used, PORT is already bound — skip Flask thread to avoid conflict
     port = int(os.environ.get("PORT", 8000))
     flask_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
 # .....,.....,.......,...,.......,....., .....,.....,.......,...,.......,.....,
 
 if __name__ == "__main__":
-    # Start Flask in background thread
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-    print(f"[PVC Bot] Flask web server started on port {os.environ.get('PORT', 8000)}")
+    # Dockerfile runs gunicorn for Flask on $PORT separately.
+    # main.py is started as the bot worker — do NOT start Flask here to avoid port conflict.
+    # Only start Flask thread if running standalone (no gunicorn in env).
+    import sys
+    running_under_gunicorn = "gunicorn" in sys.modules or os.environ.get("SERVER_SOFTWARE", "").startswith("gunicorn")
+
+    if not running_under_gunicorn:
+        flask_thread = threading.Thread(target=run_flask, daemon=True)
+        flask_thread.start()
+        print(f"[PVC Bot] Flask web server started on port {os.environ.get('PORT', 8000)}")
+    else:
+        print("[PVC Bot] Gunicorn detected — skipping internal Flask server to avoid port conflict.")
 
     # Run Pyrogram bot (blocking)
     print("[PVC Bot] Starting Cinderella PVC Bot...")
