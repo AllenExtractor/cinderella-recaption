@@ -4,15 +4,16 @@ video_recaption.py — /changecaption command
 Flow:
   1. User sends /changecaption in group
   2. Bot says: send up to 45 videos now
-  3. User sends videos — one by one OR multiple at once (all accepted)
-     Bot downloads each to disk, deletes from chat, counts: X/45
+  3. User sends videos — one by one OR many at once (all accepted instantly)
+     Bot concurrently downloads all to disk, deletes from chat, counts
   4. User sends /Done → Bot re-uploads all from disk with new cc1 captions
   5. Done message + invite to use again
 
-FIXES:
-  - NO passive @bot.on_message handler (was breaking all other commands)
-  - Uses pyromod listen() in a loop — collects bursts via short sleep window
-  - Files downloaded to disk BEFORE delete — so resend never fails
+SPEED FIXES:
+  - BURST_WAIT removed — no delay before draining burst
+  - All files in a burst downloaded CONCURRENTLY (asyncio.gather)
+  - All deletes run concurrently
+  - Re-uploads also concurrent (controlled with semaphore)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
@@ -28,9 +29,10 @@ import user_store
 from caption_builder import build_video_caption, get_title_from_file_or_caption
 from vars import AUTH_USERS
 
-MAX_VIDEOS = 45
-TIMEOUT    = 300    # 5 min wait for next message
-BURST_WAIT = 2.5    # seconds to wait for more files in same burst
+MAX_VIDEOS    = 45
+TIMEOUT       = 300   # 5 min idle wait
+BURST_DRAIN   = 0.3   # short window to drain simultaneous messages (300ms)
+MAX_DL_CONCUR = 4     # max concurrent downloads at once
 
 # .....,.....,.......,...,.......,....., .....,.....,.......,...,.......,.....,
 
@@ -63,8 +65,8 @@ def register_video_recaption_handlers(bot: Client):
         editable = await client.send_message(
             chat_id,
             "**🎥 Video Caption Change Mode**\n\n"
-            f"Send up to **{MAX_VIDEOS} videos** now — you can forward many at once!\n\n"
-            "<blockquote>• I will download & delete each video, then count.\n"
+            f"Send up to **{MAX_VIDEOS} videos** now — forward many at once!\n\n"
+            "<blockquote>• I will instantly accept all videos, download & delete.\n"
             f"• Send **/Done** anytime to re-upload with new captions.\n"
             "• Send /cancel to abort.</blockquote>"
         )
@@ -72,10 +74,50 @@ def register_video_recaption_handlers(bot: Client):
         collected: list = []   # { path, title, ext, is_doc }
         count = 0
         tmp_dir = tempfile.mkdtemp(prefix="cinvid_")
+        dl_sem = asyncio.Semaphore(MAX_DL_CONCUR)
+
+        async def download_one(msg: Message, idx: int):
+            """Download a single video to disk, return item dict or None."""
+            iv    = bool(msg.video)
+            fname = (msg.video.file_name if iv else msg.document.file_name) or "video.mp4"
+            cap   = msg.caption or ""
+
+            ext = "mp4"
+            if "." in fname:
+                raw = fname.rsplit(".", 1)[-1].lower()
+                if raw in ["mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "3gp"]:
+                    ext = raw
+
+            title = get_title_from_file_or_caption(fname, cap)
+            safe  = "".join(
+                c if c.isalnum() or c in "._-" else "_"
+                for c in f"{idx:03d}_{fname}"
+            )
+            fpath = os.path.join(tmp_dir, safe)
+
+            async with dl_sem:
+                try:
+                    await client.download_media(msg, file_name=fpath)
+                except Exception as dl_err:
+                    await client.send_message(
+                        chat_id,
+                        f"⚠️ Download failed for video {idx}: {str(dl_err)[:150]}"
+                    )
+                    try: await msg.delete()
+                    except Exception: pass
+                    return None
+
+            # Delete from chat right after download
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+
+            return {"path": fpath, "title": title, "ext": ext, "is_doc": not iv}
 
         try:
             while count < MAX_VIDEOS:
-                # ── Wait for next message ─────────────────────────────────────
+                # ── Wait for first message of next batch ──────────────────────
                 try:
                     incoming: Message = await bot.listen(chat_id, timeout=TIMEOUT)
                 except asyncio.TimeoutError:
@@ -107,95 +149,52 @@ def register_video_recaption_handlers(bot: Client):
                         return
                     break
 
-                # ── Check if it's a video/video-doc ──────────────────────────
+                # ── Not a video — skip ────────────────────────────────────────
                 if not _is_video(incoming):
                     continue
 
-                # ── Burst collection: gather simultaneous uploads ─────────────
-                # Build a small list starting with this message
+                # ── Drain burst: quickly collect all simultaneous messages ─────
+                # First message is already in hand; drain more with tiny timeout
                 burst = [incoming]
-                await asyncio.sleep(BURST_WAIT)
-
-                # Drain any messages that arrived during the sleep
-                # We use a helper coroutine that peeks with a short timeout
                 while count + len(burst) < MAX_VIDEOS:
                     try:
-                        extra: Message = await bot.listen(chat_id, timeout=1)
+                        extra: Message = await bot.listen(chat_id, timeout=BURST_DRAIN)
                     except asyncio.TimeoutError:
-                        break  # no more in burst
-                    # If it's /Done or /cancel, put it back via a re-listen trick
-                    # We can't "unget" from pyromod, so handle it now
+                        break  # no more arriving — burst complete
                     if extra.text and extra.text.strip().lower() in ["/done", "/cancel", "done"]:
-                        # Process the burst we have, then handle this command next loop
-                        # We do this by breaking and storing command for next iteration
-                        burst.append(extra)  # will be caught as non-video, handled below
+                        burst.append(extra)  # handle after processing burst
                         break
                     burst.append(extra)
 
-                # ── Process each message in burst ─────────────────────────────
-                stop_after = False
+                # ── Separate commands from files ──────────────────────────────
+                cmd_msg   = None
+                file_msgs = []
                 for msg in burst:
-                    if count >= MAX_VIDEOS:
-                        break
-
-                    # If this is a command message (got mixed in from burst drain)
                     if msg.text:
                         txt = msg.text.strip().lower()
-                        if txt in ["/done", "done"]:
-                            try: await msg.delete()
-                            except Exception: pass
-                            stop_after = True
-                            break
-                        elif txt == "/cancel":
-                            try: await msg.delete()
-                            except Exception: pass
-                            await editable.edit("❌ **Cancelled.**")
-                            _cleanup(tmp_dir, collected)
-                            return
-                        continue
+                        if txt in ["/done", "done", "/cancel"]:
+                            cmd_msg = msg
+                        # ignore other text
+                    elif _is_video(msg):
+                        file_msgs.append(msg)
 
-                    if not _is_video(msg):
-                        continue
+                # ── Concurrent download of all files in burst ─────────────────
+                if file_msgs:
+                    slots_left = MAX_VIDEOS - count
+                    to_dl = file_msgs[:slots_left]
 
-                    iv   = bool(msg.video)
-                    fname        = (msg.video.file_name if iv else msg.document.file_name) or "video.mp4"
-                    caption_text = msg.caption or ""
+                    # Assign sequential indices
+                    start_idx = count + 1
+                    tasks = [
+                        download_one(msg, start_idx + i)
+                        for i, msg in enumerate(to_dl)
+                    ]
+                    results = await asyncio.gather(*tasks)
 
-                    ext = "mp4"
-                    if "." in fname:
-                        raw_ext = fname.rsplit(".", 1)[-1].lower()
-                        if raw_ext in ["mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "3gp"]:
-                            ext = raw_ext
-
-                    title = get_title_from_file_or_caption(fname, caption_text)
-
-                    # ── Download FIRST ────────────────────────────────────────
-                    safe = "".join(
-                        c if c.isalnum() or c in "._-" else "_"
-                        for c in f"{count+1:03d}_{fname}"
-                    )
-                    fpath = os.path.join(tmp_dir, safe)
-
-                    try:
-                        await client.download_media(msg, file_name=fpath)
-                    except Exception as dl_err:
-                        await client.send_message(
-                            chat_id,
-                            f"⚠️ Download failed for video {count+1}: {str(dl_err)[:150]}"
-                        )
-                        try: await msg.delete()
-                        except Exception: pass
-                        continue
-
-                    # ── Delete from chat AFTER download ───────────────────────
-                    try:
-                        await msg.delete()
-                    except Exception:
-                        pass
-
-                    is_doc = not bool(msg.video)
-                    collected.append({"path": fpath, "title": title, "ext": ext, "is_doc": is_doc})
-                    count += 1
+                    for item in results:
+                        if item:
+                            collected.append(item)
+                            count += 1
 
                     if count >= MAX_VIDEOS:
                         await editable.edit(
@@ -208,7 +207,32 @@ def register_video_recaption_handlers(bot: Client):
                             "Keep sending or send **/Done** when finished."
                         )
 
-                if stop_after or count >= MAX_VIDEOS:
+                # ── Handle command found in burst ─────────────────────────────
+                if cmd_msg:
+                    txt = cmd_msg.text.strip().lower()
+                    try: await cmd_msg.delete()
+                    except Exception: pass
+                    if txt in ["/done", "done"]:
+                        if count == 0:
+                            await editable.edit(
+                                "❌ No videos collected.\nUse /changecaption to start again."
+                            )
+                            _cleanup(tmp_dir, collected)
+                            return
+                        break
+                    elif txt == "/cancel":
+                        await editable.edit("❌ **Cancelled.**")
+                        _cleanup(tmp_dir, collected)
+                        return
+
+                if count >= MAX_VIDEOS:
+                    # Wait for /Done
+                    try:
+                        done_msg: Message = await bot.listen(chat_id, timeout=TIMEOUT)
+                        try: await done_msg.delete()
+                        except Exception: pass
+                    except asyncio.TimeoutError:
+                        pass
                     break
 
         except Exception as e:
@@ -221,34 +245,43 @@ def register_video_recaption_handlers(bot: Client):
             _cleanup(tmp_dir, collected)
             return
 
-        # ── Re-upload from disk ───────────────────────────────────────────────
+        # ── Re-upload from disk (concurrent, max 3 at a time) ────────────────
         await editable.edit(
             f"⏳ **Re-uploading {len(collected)} video(s) with new captions...**\n"
             "Please wait."
         )
 
         success = 0
-        for idx, item in enumerate(collected, start=1):
+        up_sem  = asyncio.Semaphore(3)
+
+        async def upload_one(idx: int, item: dict):
+            nonlocal success
             caption = build_video_caption(idx, item["title"], item["ext"])
-            try:
-                if item["is_doc"]:
-                    await client.send_document(
-                        chat_id  = chat_id,
-                        document = item["path"],
-                        caption  = caption
+            async with up_sem:
+                try:
+                    if item["is_doc"]:
+                        await client.send_document(
+                            chat_id  = chat_id,
+                            document = item["path"],
+                            caption  = caption
+                        )
+                    else:
+                        await client.send_video(
+                            chat_id = chat_id,
+                            video   = item["path"],
+                            caption = caption
+                        )
+                    success += 1
+                except Exception as e:
+                    await client.send_message(
+                        chat_id, f"⚠️ Failed to send video {idx}: {str(e)[:200]}"
                     )
-                else:
-                    await client.send_video(
-                        chat_id = chat_id,
-                        video   = item["path"],
-                        caption = caption
-                    )
-                success += 1
-                await asyncio.sleep(0.5)
-            except Exception as e:
-                await client.send_message(
-                    chat_id, f"⚠️ Failed to send video {idx}: {str(e)[:200]}"
-                )
+
+        upload_tasks = [
+            upload_one(idx, item)
+            for idx, item in enumerate(collected, start=1)
+        ]
+        await asyncio.gather(*upload_tasks)
 
         await editable.edit(
             f"✅ **Done! I shared all {success} video(s) with new Captions.**\n\n"

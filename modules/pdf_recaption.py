@@ -4,15 +4,16 @@ pdf_recaption.py — /changepcaption command
 Flow:
   1. User sends /changepcaption in group
   2. Bot says: send up to 45 PDFs now
-  3. User sends PDFs — one by one OR multiple at once (all accepted)
-     Bot downloads each to disk, deletes from chat, counts: X/45
+  3. User sends PDFs — one by one OR many at once (all accepted instantly)
+     Bot concurrently downloads all to disk, deletes from chat, counts
   4. User sends /Done → Bot re-uploads all from disk with new cc1 captions
   5. Done message + invite to use again
 
-FIXES:
-  - NO passive @bot.on_message handler (was breaking all other commands)
-  - Uses pyromod listen() in a loop — collects bursts via short sleep window
-  - Files downloaded to disk BEFORE delete — so resend never fails
+SPEED FIXES:
+  - BURST_WAIT removed — no delay before draining burst
+  - All files in a burst downloaded CONCURRENTLY (asyncio.gather)
+  - All deletes run concurrently
+  - Re-uploads also concurrent (controlled with semaphore)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
@@ -28,9 +29,10 @@ import user_store
 from caption_builder import build_pdf_caption, get_title_from_file_or_caption
 from vars import AUTH_USERS
 
-MAX_PDFS   = 45
-TIMEOUT    = 300    # 5 min wait
-BURST_WAIT = 2.5    # seconds to gather simultaneous uploads
+MAX_PDFS      = 45
+TIMEOUT       = 300   # 5 min idle wait
+BURST_DRAIN   = 0.3   # 300ms window to drain simultaneous messages
+MAX_DL_CONCUR = 4     # max concurrent downloads
 
 # .....,.....,.......,...,.......,....., .....,.....,.......,...,.......,.....,
 
@@ -63,8 +65,8 @@ def register_pdf_recaption_handlers(bot: Client):
         editable = await client.send_message(
             chat_id,
             "**📄 PDF Caption Change Mode**\n\n"
-            f"Send up to **{MAX_PDFS} PDF files** now — you can forward many at once!\n\n"
-            "<blockquote>• I will download & delete each PDF, then count.\n"
+            f"Send up to **{MAX_PDFS} PDF files** now — forward many at once!\n\n"
+            "<blockquote>• I will instantly accept all PDFs, download & delete.\n"
             f"• Send **/Done** anytime to re-upload with new captions.\n"
             "• Send /cancel to abort.</blockquote>"
         )
@@ -72,10 +74,42 @@ def register_pdf_recaption_handlers(bot: Client):
         collected: list = []   # { path, title }
         count = 0
         tmp_dir = tempfile.mkdtemp(prefix="cinpdf_")
+        dl_sem  = asyncio.Semaphore(MAX_DL_CONCUR)
+
+        async def download_one(msg: Message, idx: int):
+            """Download a single PDF to disk, return item dict or None."""
+            fname = msg.document.file_name or "document.pdf"
+            cap   = msg.caption or ""
+            title = get_title_from_file_or_caption(fname, cap)
+            safe  = "".join(
+                c if c.isalnum() or c in "._-" else "_"
+                for c in f"{idx:03d}_{fname}"
+            )
+            fpath = os.path.join(tmp_dir, safe)
+
+            async with dl_sem:
+                try:
+                    await client.download_media(msg, file_name=fpath)
+                except Exception as dl_err:
+                    await client.send_message(
+                        chat_id,
+                        f"⚠️ Download failed for PDF {idx}: {str(dl_err)[:150]}"
+                    )
+                    try: await msg.delete()
+                    except Exception: pass
+                    return None
+
+            # Delete from chat right after download
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+
+            return {"path": fpath, "title": title}
 
         try:
             while count < MAX_PDFS:
-                # ── Wait for next message ─────────────────────────────────────
+                # ── Wait for first message of next batch ──────────────────────
                 try:
                     incoming: Message = await bot.listen(chat_id, timeout=TIMEOUT)
                 except asyncio.TimeoutError:
@@ -107,78 +141,49 @@ def register_pdf_recaption_handlers(bot: Client):
                         return
                     break
 
-                # ── Check if it's a PDF ───────────────────────────────────────
+                # ── Not a PDF — skip ──────────────────────────────────────────
                 if not _is_pdf(incoming):
                     continue
 
-                # ── Burst collection ──────────────────────────────────────────
+                # ── Drain burst: quickly collect all simultaneous messages ─────
                 burst = [incoming]
-                await asyncio.sleep(BURST_WAIT)
-
                 while count + len(burst) < MAX_PDFS:
                     try:
-                        extra: Message = await bot.listen(chat_id, timeout=1)
+                        extra: Message = await bot.listen(chat_id, timeout=BURST_DRAIN)
                     except asyncio.TimeoutError:
-                        break
+                        break  # no more arriving — burst complete
                     if extra.text and extra.text.strip().lower() in ["/done", "/cancel", "done"]:
                         burst.append(extra)
                         break
                     burst.append(extra)
 
-                # ── Process each message in burst ─────────────────────────────
-                stop_after = False
+                # ── Separate commands from files ──────────────────────────────
+                cmd_msg   = None
+                file_msgs = []
                 for msg in burst:
-                    if count >= MAX_PDFS:
-                        break
-
                     if msg.text:
                         txt = msg.text.strip().lower()
-                        if txt in ["/done", "done"]:
-                            try: await msg.delete()
-                            except Exception: pass
-                            stop_after = True
-                            break
-                        elif txt == "/cancel":
-                            try: await msg.delete()
-                            except Exception: pass
-                            await editable.edit("❌ **Cancelled.**")
-                            _cleanup(tmp_dir, collected)
-                            return
-                        continue
+                        if txt in ["/done", "done", "/cancel"]:
+                            cmd_msg = msg
+                    elif _is_pdf(msg):
+                        file_msgs.append(msg)
 
-                    if not _is_pdf(msg):
-                        continue
+                # ── Concurrent download of all PDFs in burst ──────────────────
+                if file_msgs:
+                    slots_left = MAX_PDFS - count
+                    to_dl      = file_msgs[:slots_left]
 
-                    fname        = msg.document.file_name or "document.pdf"
-                    caption_text = msg.caption or ""
-                    title        = get_title_from_file_or_caption(fname, caption_text)
+                    start_idx = count + 1
+                    tasks     = [
+                        download_one(msg, start_idx + i)
+                        for i, msg in enumerate(to_dl)
+                    ]
+                    results = await asyncio.gather(*tasks)
 
-                    # ── Download FIRST ────────────────────────────────────────
-                    safe = "".join(
-                        c if c.isalnum() or c in "._-" else "_"
-                        for c in f"{count+1:03d}_{fname}"
-                    )
-                    fpath = os.path.join(tmp_dir, safe)
-
-                    try:
-                        await client.download_media(msg, file_name=fpath)
-                    except Exception as dl_err:
-                        await client.send_message(
-                            chat_id,
-                            f"⚠️ Download failed for PDF {count+1}: {str(dl_err)[:150]}"
-                        )
-                        try: await msg.delete()
-                        except Exception: pass
-                        continue
-
-                    # ── Delete AFTER download ─────────────────────────────────
-                    try:
-                        await msg.delete()
-                    except Exception:
-                        pass
-
-                    collected.append({"path": fpath, "title": title})
-                    count += 1
+                    for item in results:
+                        if item:
+                            collected.append(item)
+                            count += 1
 
                     if count >= MAX_PDFS:
                         await editable.edit(
@@ -191,7 +196,31 @@ def register_pdf_recaption_handlers(bot: Client):
                             "Keep sending or send **/Done** when finished."
                         )
 
-                if stop_after or count >= MAX_PDFS:
+                # ── Handle command found in burst ─────────────────────────────
+                if cmd_msg:
+                    txt = cmd_msg.text.strip().lower()
+                    try: await cmd_msg.delete()
+                    except Exception: pass
+                    if txt in ["/done", "done"]:
+                        if count == 0:
+                            await editable.edit(
+                                "❌ No PDFs collected.\nUse /changepcaption to start again."
+                            )
+                            _cleanup(tmp_dir, collected)
+                            return
+                        break
+                    elif txt == "/cancel":
+                        await editable.edit("❌ **Cancelled.**")
+                        _cleanup(tmp_dir, collected)
+                        return
+
+                if count >= MAX_PDFS:
+                    try:
+                        done_msg: Message = await bot.listen(chat_id, timeout=TIMEOUT)
+                        try: await done_msg.delete()
+                        except Exception: pass
+                    except asyncio.TimeoutError:
+                        pass
                     break
 
         except Exception as e:
@@ -204,27 +233,36 @@ def register_pdf_recaption_handlers(bot: Client):
             _cleanup(tmp_dir, collected)
             return
 
-        # ── Re-upload from disk ───────────────────────────────────────────────
+        # ── Re-upload from disk (concurrent, max 3 at a time) ────────────────
         await editable.edit(
             f"⏳ **Re-uploading {len(collected)} PDF(s) with new captions...**\n"
             "Please wait."
         )
 
         success = 0
-        for idx, item in enumerate(collected, start=1):
+        up_sem  = asyncio.Semaphore(3)
+
+        async def upload_one(idx: int, item: dict):
+            nonlocal success
             caption = build_pdf_caption(idx, item["title"])
-            try:
-                await client.send_document(
-                    chat_id  = chat_id,
-                    document = item["path"],
-                    caption  = caption
-                )
-                success += 1
-                await asyncio.sleep(0.5)
-            except Exception as e:
-                await client.send_message(
-                    chat_id, f"⚠️ Failed to send PDF {idx}: {str(e)[:200]}"
-                )
+            async with up_sem:
+                try:
+                    await client.send_document(
+                        chat_id  = chat_id,
+                        document = item["path"],
+                        caption  = caption
+                    )
+                    success += 1
+                except Exception as e:
+                    await client.send_message(
+                        chat_id, f"⚠️ Failed to send PDF {idx}: {str(e)[:200]}"
+                    )
+
+        upload_tasks = [
+            upload_one(idx, item)
+            for idx, item in enumerate(collected, start=1)
+        ]
+        await asyncio.gather(*upload_tasks)
 
         await editable.edit(
             f"✅ **Done! I shared all {success} PDF(s) with new Captions.**\n\n"
