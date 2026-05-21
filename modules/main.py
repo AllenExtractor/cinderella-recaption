@@ -3,8 +3,8 @@ main.py — Cinderella PVC Bot (PDF Video Caption Bot)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Commands (GROUP only):
   /start         — Welcome message with image, feature list & buttons
-  /changecaption — Recaption up to 45 videos with cc1 style
-  /changepcaption— Recaption up to 45 PDFs with cc1 style
+  /changecaption — Recaption up to 5000 videos with cc1 style
+  /changepcaption— Recaption up to 5000 PDFs with cc1 style
   /setbatch      — Set global batch name (global settings)
   /setcredit     — Set global credit name (global settings)
   /viewsettings  — View current global settings
@@ -111,8 +111,8 @@ async def start_cmd(client: Client, m: Message):
             f"➠ I am **Cinderella PVC Bot** (PDF Video Caption Bot)\n\n"
             f"I can **re-caption videos and PDFs** with a beautiful cc1-style caption!\n\n"
             f"**Features:**\n"
-            f"• 🎥 Bulk Video Caption Change (up to 45 videos)\n"
-            f"• 📄 Bulk PDF Caption Change (up to 45 PDFs)\n"
+            f"• 🎥 Bulk Video Caption Change (up to 5000 videos)\n"
+            f"• 📄 Bulk PDF Caption Change (up to 5000 PDFs)\n"
             f"• ⚙️ Global Settings: Batch Name & Credit Name\n\n"
             f"<blockquote>You are currently **not authorized**.\n"
             f"Contact the owner to get access.\n"
