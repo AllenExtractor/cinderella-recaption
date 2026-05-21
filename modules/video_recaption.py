@@ -59,7 +59,7 @@ def register_video_recaption_handlers(bot: Client):
 
         if user_id not in AUTH_USERS:
             await m.reply_text(
-                f"<blockquote>**🙅 You are not authorized to use this bot.**\n"
+                f"<blockquote>**🙅 You are not authorized to use this bot🙆🏿‍♀️.**\n"
                 f"Contact the owner to get access.\n"
                 f"Your User ID: `{user_id}`</blockquote>"
             )
