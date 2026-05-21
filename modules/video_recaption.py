@@ -171,7 +171,7 @@ def register_video_recaption_handlers(bot: Client):
                             ext = raw
 
                     title        = get_title_from_file_or_caption(fname, msg.caption or "")
-                    duration_str = _fmt_duration(duration)
+                    duration_str = _fmt_duration(int(duration))
 
                     # Delete original from chat
                     try:
