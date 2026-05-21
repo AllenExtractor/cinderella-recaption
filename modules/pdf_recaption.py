@@ -30,7 +30,7 @@ import user_store
 from caption_builder import build_pdf_caption, get_title_from_file_or_caption
 from vars import AUTH_USERS
 
-MAX_PDFS    = 45
+MAX_PDFS    = 5000
 TIMEOUT     = 300    # 5 min idle wait
 BURST_DRAIN = 0.003  # 3ms — near-instant burst drain
 
