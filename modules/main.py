@@ -12,6 +12,9 @@ Commands (GROUP only):
 Commands (PRIVATE, OWNER only):
   /broadcast     — Broadcast to all users/groups
   /broadusers    — View all registered users/groups
+  /addauth       — Add a user to authorized users
+  /rmauth        — Remove a user from authorized users
+  /users         — List all authorized users
 
 NOTE: Bot works ONLY in group chats (except broadcast commands).
 Bot must be admin with full rights in the group.
@@ -38,6 +41,7 @@ from video_recaption import register_video_recaption_handlers
 from pdf_recaption   import register_pdf_recaption_handlers
 from settings        import register_settings_handlers
 from broadcast       import register_broadcast_handlers
+from authorisation   import register_authorisation_handlers
 
 # .....,.....,.......,...,.......,....., .....,.....,.......,...,.......,.....,
 
@@ -141,7 +145,10 @@ async def help_info_cb(client, callback_query):
         "• `/viewsettings` — View current settings\n\n"
         "**Private Commands (Owner only):**\n"
         "• `/broadcast` — Broadcast a message\n"
-        "• `/broadusers` — View all users/groups\n\n"
+        "• `/broadusers` — View all users/groups\n"
+        "• `/addauth <user_id>` — Add authorized user\n"
+        "• `/rmauth <user_id>` — Remove authorized user\n"
+        "• `/users` — List all authorized users\n\n"
         "<blockquote>⚠️ Bot must be **Admin** in group with full rights.\n"
         "All group commands work in group chat only.</blockquote>"
     )
@@ -183,6 +190,7 @@ register_video_recaption_handlers(bot)
 register_pdf_recaption_handlers(bot)
 register_settings_handlers(bot)
 register_broadcast_handlers(bot)
+register_authorisation_handlers(bot)
 
 # .....,.....,.......,...,.......,....., .....,.....,.......,...,.......,.....,
 # ── Flask web server (for Render.com free web service) ───────────────────────
