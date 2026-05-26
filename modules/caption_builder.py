@@ -8,22 +8,22 @@ def build_video_caption(vid_id: int, title: str, ext: str = "mp4", duration_str:
     """
     cc1 style video caption.
     🕐 Video Duration: H:MM:SS   <- shown at top if available
-    🎬 Index ID : 001.
-    🎞 Title : <title>.<ext>
-    📚 Batch : <batch_name>
-    🎓 Upload By : <credit_name>
+    🖲️𝐕𝐈𝐃_𝐈𝐃 : 001.
+    📝 𝐓𝐢𝐭𝐥𝐞 : <title>.<ext>
+    📚 𝐁𝐚𝐭𝐜𝐡 𝐍𝐚𝐦𝐞 : <batch_name>
+    📥 𝐄𝐱𝐭𝐫𝐚𝐜𝐭𝐞𝐝 𝐁𝐲⬩➤ : <credit_name>
     """
-    b_name = globals.get_setting("batch_name", "💥Contact: @CinderellaContactBot")
+    b_name = globals.get_setting("batch_name", "PW Premium Batch")
     cr     = globals.get_setting("credit_name", globals.CR)
 
     dur_line = f"**🕐 Video Duration: {duration_str}\n\n" if duration_str else ""
 
     caption = (
         f"{dur_line}"
-        f"**🎬 Index ID : {str(vid_id).zfill(3)}.\n\n"
-        f"🎞 Title : 🎬 {title} .{ext}\n\n"
-        f"<pre><code>📚 Batch : {b_name}</code></pre>\n\n"
-        f"🎓 Upload By : {cr}\n\n"
+        f"**🖲️ 𝐕𝐈𝐃_𝐈𝐃 : {str(vid_id).zfill(3)}.\n\n"
+        f"📝 𝐓𝐢𝐭𝐥𝐞 :  {title} .{ext}\n\n"
+        f"<pre><code>📚 𝐁𝐚𝐭𝐜𝐡 𝐍𝐚𝐦𝐞 : {b_name}</code></pre>\n\n"
+        f"📥 𝐄𝐱𝐭𝐫𝐚𝐜𝐭𝐞𝐝 𝐁𝐲⬩➤ : {cr}\n\n"
         f"**➽━━━⊱∘₊𝙏𝙚𝙖𝙢★𝙏𝙤𝙭𝙞𝙘₊∘⊰━━━❥**"
     )
     return caption
@@ -32,19 +32,19 @@ def build_video_caption(vid_id: int, title: str, ext: str = "mp4", duration_str:
 def build_pdf_caption(pdf_id: int, title: str) -> str:
     """
     cc1 style PDF caption.
-    💾 PDF_ID: 001.
-    📝 Title: <title>.pdf
-    📚 Batch Name: <batch_name>
-    📥 Extracted By♠ : <credit_name>
+    💾 𝐏𝐃𝐅_𝐈𝐃: 001.
+    📝 𝐓𝐢𝐭𝐥𝐞: <title>.pdf
+    📚 𝐁𝐚𝐭𝐜𝐡 𝐍𝐚𝐦𝐞: <batch_name>
+    📥 𝐄𝐱𝐭𝐫𝐚𝐜𝐭𝐞𝐝 𝐁𝐲⬩➤ : <credit_name>
     """
-    b_name = globals.get_setting("batch_name", "💥Contact: @CinderellaContactBot")
+    b_name = globals.get_setting("batch_name", "PW Premium Batch")
     cr     = globals.get_setting("credit_name", globals.CR)
 
     caption = (
-        f"**💾 PDF_ID: {str(pdf_id).zfill(3)}.\n\n"
-        f"📝 Title: {title} .pdf\n\n"
-        f"<pre><code>📚 Batch Name: {b_name}</code></pre>\n\n"
-        f"📥 Extracted By♠ : {cr}\n\n"
+        f"**💾 𝐏𝐃𝐅_𝐈𝐃: {str(pdf_id).zfill(3)}.\n\n"
+        f"📝 𝐓𝐢𝐭𝐥𝐞: {title} .pdf\n\n"
+        f"<pre><code>📚 𝐁𝐚𝐭𝐜𝐡 𝐍𝐚𝐦𝐞: {b_name}</code></pre>\n\n"
+        f"📥 𝐄𝐱𝐭𝐫𝐚𝐜𝐭𝐞𝐝 𝐁𝐲⬩➤ : {cr}\n\n"
         f"**➽━━━⊱∘₊𝙏𝙚𝙖𝙢★𝙏𝙤𝙭𝙞𝙘₊∘⊰━━━❥**"
     )
     return caption
