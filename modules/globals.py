@@ -34,5 +34,5 @@ def set_setting(key: str, value):
     _save_settings(data)
 
 # ── Load persisted batch_name and credit_name on startup ─────────────────────
-batch_name  = get_setting("batch_name",  "💥Contact: @CinderellaContactBot")
+batch_name  = get_setting("batch_name",  "Premium Batch")
 credit_name = get_setting("credit_name", CR)
