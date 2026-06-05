@@ -110,7 +110,7 @@ def register_settings_handlers(bot: Client):
             await m.reply_text(f"<blockquote>🙅 Not authorized. Your ID: `{user_id}`</blockquote>")
             return
 
-        b_name = globals.get_setting("batch_name",  "💥Contact: @CinderellaContactBot")
+        b_name = globals.get_setting("batch_name",  "Premium Batch")
         cr     = globals.get_setting("credit_name", CREDIT)
 
         text = (
