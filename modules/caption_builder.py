@@ -21,9 +21,9 @@ def build_video_caption(vid_id: int, title: str, ext: str = "mp4", duration_str:
     caption = (
         f"{dur_line}"
         f"**🖲️ 𝐕𝐈𝐃_𝐈𝐃 : {str(vid_id).zfill(3)}.\n\n"
-        f"📝 𝐓𝐢𝐭𝐥𝐞 :  {title} .{ext}\n\n"
+        f"📝 𝐓𝐢𝐭𝐥𝐞 :  {title} @MR_Toxic_1.{ext}\n\n"
         f"<pre><code>📚 𝐁𝐚𝐭𝐜𝐡 𝐍𝐚𝐦𝐞 : {b_name}</code></pre>\n\n"
-        f"📥 𝐄𝐱𝐭𝐫𝐚𝐜𝐭𝐞𝐝 𝐁𝐲⬩➤ : {cr}\n\n"
+        f"📥 𝐄𝐱𝐭𝐫𝐚𝐜𝐭𝐞𝐝 𝐁𝐲⬩➤ :\n★彡[{cr}]彡★\n\n"
         f"**➽━━━⊱∘₊𝙏𝙚𝙖𝙢★𝙏𝙤𝙭𝙞𝙘₊∘⊰━━━❥**"
     )
     return caption
@@ -42,9 +42,9 @@ def build_pdf_caption(pdf_id: int, title: str) -> str:
 
     caption = (
         f"**💾 𝐏𝐃𝐅_𝐈𝐃: {str(pdf_id).zfill(3)}.\n\n"
-        f"📝 𝐓𝐢𝐭𝐥𝐞: {title} .pdf\n\n"
+        f"📝 𝐓𝐢𝐭𝐥𝐞: {title} @MR_Toxic_1.pdf\n\n"
         f"<pre><code>📚 𝐁𝐚𝐭𝐜𝐡 𝐍𝐚𝐦𝐞: {b_name}</code></pre>\n\n"
-        f"📥 𝐄𝐱𝐭𝐫𝐚𝐜𝐭𝐞𝐝 𝐁𝐲⬩➤ : {cr}\n\n"
+        f"📥 𝐄𝐱𝐭𝐫𝐚𝐜𝐭𝐞𝐝 𝐁𝐲⬩➤ :\n★彡[{cr}]彡★\n\n"
         f"**➽━━━⊱∘₊𝙏𝙚𝙖𝙢★𝙏𝙤𝙭𝙞𝙘₊∘⊰━━━❥**"
     )
     return caption
