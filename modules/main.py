@@ -73,7 +73,7 @@ def get_start_keyboard():
          InlineKeyboardButton("💳 Set Credit",            switch_inline_query_current_chat="/setcredit")],
         [InlineKeyboardButton("📊 View Settings",         switch_inline_query_current_chat="/viewsettings")],
         [InlineKeyboardButton("📢 Help & Info",           callback_data="help_info")],
-        [InlineKeyboardButton("🔍 Developer", url="https://t.me/CinderellaContactBot"),
+        [InlineKeyboardButton("🔍 Developer", url="https://t.me/SmartBoy_ApnaMS"),
          InlineKeyboardButton("👑 Owner",     url="https://t.me/MR_Toxic_1")],
     ])
 
@@ -138,17 +138,17 @@ async def help_info_cb(client, callback_query):
     text = (
         "**📖 Cinderella PVC Bot — Help**\n\n"
         "**Group Commands (Auth Users):**\n"
-        "• `/changecaption` — Bulk recaption videos (max 5000)\n"
-        "• `/changepcaption` — Bulk recaption PDFs (max 5000)\n"
-        "• `/setbatch` — Set global batch name\n"
-        "• `/setcredit` — Set global credit name\n"
-        "• `/viewsettings` — View current settings\n\n"
+        "• /changecaption — Bulk recaption videos (max 5000)\n"
+        "• /changepcaption — Bulk recaption PDFs (max 5000)\n"
+        "• /setbatch — Set global batch name\n"
+        "• /setcredit — Set global credit name\n"
+        "• /viewsettings — View current settings\n\n"
         "**Private Commands (Owner only):**\n"
-        "• `/broadcast` — Broadcast a message\n"
-        "• `/broadusers` — View all users/groups\n"
-        "• `/addauth <user_id>` — Add authorized user\n"
-        "• `/rmauth <user_id>` — Remove authorized user\n"
-        "• `/users` — List all authorized users\n\n"
+        "• /broadcast — Broadcast a message\n"
+        "• /broadusers — View all users/groups\n"
+        "• /addauth <user_id> — Add authorized user\n"
+        "• /rmauth <user_id> — Remove authorized user\n"
+        "• /users — List all authorized users\n\n"
         "<blockquote>⚠️ Bot must be **Admin** in group with full rights.\n"
         "All group commands work in group chat only.</blockquote>"
     )
